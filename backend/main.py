@@ -39,8 +39,8 @@ except LookupError:
     nltk.download("punkt_tab", quiet=True)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-PHASE1_DIR = r"H:\CSET312_project\v3\models\phase1_roberta_fulltune\best"
-PHASE2_HEAD = r"H:\CSET312_project\v3\models\phase2_fusion_head\fusion_head.pt"
+PHASE1_DIR = os.getenv("PHASE1_DIR", "roberta-base")
+PHASE2_HEAD = os.getenv("PHASE2_HEAD", "fusion_head.pt")
 
 app = FastAPI(title="Fake News Detector")
 
@@ -227,13 +227,13 @@ def analyze(req: AnalyzeRequest):
         probs = torch.softmax(out.logits, dim=-1).cpu().numpy()[0]
         attentions = out.attentions
 
-    label = "FAKE" if probs.argmax() == 1 else "REAL"
+    label = "REAL" if probs.argmax() == 1 else "FAKE"
     tokens = build_token_highlights(attentions, enc)
 
     return {
         "label": label,
-        "prob_real": round(float(probs[0]), 4),
-        "prob_fake": round(float(probs[1]), 4),
+        "prob_fake": round(float(probs[0]), 4),
+        "prob_real": round(float(probs[1]), 4),
         "tokens": tokens,
     }
 
@@ -266,7 +266,7 @@ async def analyze_stream(req: AnalyzeRequest):
                 probs = torch.softmax(out.logits, dim=-1).cpu().numpy()[0]
                 attentions = out.attentions
 
-            label = "FAKE" if probs.argmax() == 1 else "REAL"
+            label = "REAL" if probs.argmax() == 1 else "FAKE"
             tokens = build_token_highlights(attentions, enc)
             return label, probs, tokens
 
@@ -296,8 +296,8 @@ async def analyze_stream(req: AnalyzeRequest):
             verdict_data = {
                 "type": "verdict",
                 "label": label,
-                "prob_real": round(float(probs[0]), 4),
-                "prob_fake": round(float(probs[1]), 4),
+                "prob_fake": round(float(probs[0]), 4),
+                "prob_real": round(float(probs[1]), 4),
             }
             yield json.dumps(verdict_data) + "\n\n"
             for tok in tokens_result:
@@ -335,8 +335,8 @@ async def analyze_stream(req: AnalyzeRequest):
             verdict_data = {
                 "type": "verdict",
                 "label": label,
-                "prob_real": round(float(probs[0]), 4),
-                "prob_fake": round(float(probs[1]), 4),
+                "prob_fake": round(float(probs[0]), 4),
+                "prob_real": round(float(probs[1]), 4),
             }
             yield json.dumps(verdict_data) + "\n\n"
             for tok in tokens_result:

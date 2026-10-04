@@ -14,3 +14,10 @@ wheels/
 *.7z
 *.zip
 
+# Secrets
+.env
+
+# Large model files
+backend/models/
+Notebooks/fake_news_roberta_model/
+Notebooks/logs/
