@@ -39,8 +39,23 @@ except LookupError:
     nltk.download("punkt_tab", quiet=True)
 
 # ── Paths ──────────────────────────────────────────────────────────────────────
-PHASE1_DIR = os.getenv("PHASE1_DIR", "roberta-base")
-PHASE2_HEAD = os.getenv("PHASE2_HEAD", "fusion_head.pt")
+phase1_env = os.getenv("PHASE1_DIR", "models/phase1_roberta_fulltune/best")
+if not Path(phase1_env).exists():
+    if Path("models/phase1_roberta_fulltune").exists():
+        PHASE1_DIR = "models/phase1_roberta_fulltune"
+    else:
+        PHASE1_DIR = "roberta-base"
+else:
+    PHASE1_DIR = phase1_env
+
+phase2_env = os.getenv("PHASE2_HEAD", "models/phase2_fusion_head/fusion_head.pt")
+if not Path(phase2_env).exists():
+    if Path("fusion_head.pt").exists():
+        PHASE2_HEAD = "fusion_head.pt"
+    else:
+        PHASE2_HEAD = phase2_env
+else:
+    PHASE2_HEAD = phase2_env
 
 app = FastAPI(title="Fake News Detector")
 
@@ -65,14 +80,13 @@ roberta.eval()
 
 
 class FusionHead(nn.Module):
-    def __init__(self):
+    def __init__(self, semantic_dim=768, stat_dim=3, hidden=256, dropout=0.3):
         super().__init__()
         self.net = nn.Sequential(
-            nn.Linear(768 + 3, 128),
+            nn.Linear(semantic_dim + stat_dim, hidden),
             nn.ReLU(),
-            nn.BatchNorm1d(128),
-            nn.Dropout(0.5),
-            nn.Linear(128, 2),
+            nn.Dropout(dropout),
+            nn.Linear(hidden, 2),
         )
 
     def forward(self, semantic, stat):
@@ -80,11 +94,23 @@ class FusionHead(nn.Module):
 
 
 fusion_head = None
+stat_mean = np.array([3.6115989685058594, 110.91300201416016, -3.6115989685058594], dtype=np.float32)
+stat_std = np.array([0.3903583288192749, 1401.9859619140625, 0.3903583288192749], dtype=np.float32)
+
 if Path(PHASE2_HEAD).exists():
-    ckpt = torch.load(PHASE2_HEAD, map_location=device, weights_only=False)
-    fusion_head = FusionHead().to(device)
-    fusion_head.load_state_dict(ckpt["head_state"])
-    fusion_head.eval()
+    try:
+        ckpt = torch.load(PHASE2_HEAD, map_location=device, weights_only=False)
+        hidden = ckpt.get("hidden", 256)
+        if "stat_mean" in ckpt:
+            stat_mean = np.array(ckpt["stat_mean"], dtype=np.float32)
+        if "stat_std" in ckpt:
+            stat_std = np.array(ckpt["stat_std"], dtype=np.float32)
+        fusion_head = FusionHead(hidden=hidden).to(device)
+        fusion_head.load_state_dict(ckpt["head_state"])
+        fusion_head.eval()
+        print(f"[TruthShield] Phase 2 Fusion Head loaded successfully (hidden={hidden}).")
+    except Exception as e:
+        print(f"[TruthShield] Warning: Could not load Phase 2 head: {e}")
 
 gpt2_tok = GPT2TokenizerFast.from_pretrained("gpt2")
 gpt2_tok.pad_token = gpt2_tok.eos_token
@@ -173,8 +199,9 @@ def build_token_highlights(attentions, enc):
 @torch.no_grad()
 def compute_stat_features(text: str):
     from nltk.tokenize import sent_tokenize
-    sents = sent_tokenize(text)
-    sent_var = float(np.var([len(s.split()) for s in sents])) if len(sents) > 1 else 0.0
+    sents = sent_tokenize(text) if text.strip() else [""]
+    lengths = [len(s.split()) for s in sents]
+    sent_var = float(np.var(lengths)) if len(lengths) > 1 else 0.0
     loss = 0.0
     if len(text.split()) >= 2:
         enc = gpt2_tok(
@@ -186,10 +213,8 @@ def compute_stat_features(text: str):
 
 # ── Routes ─────────────────────────────────────────────────────────────────────
 
-# @app.get("/", response_class=HTMLResponse)
 @app.get("/")
 async def index(request: Request):
-    # return templates.TemplateResponse("index.html", {"request": request})
     return "Hello project is running"
 
 
@@ -213,10 +238,10 @@ def analyze(req: AnalyzeRequest):
 
     if req.model == "phase2" and fusion_head is not None:
         roberta_out = roberta.roberta(**enc, output_attentions=True)
-        cls_emb = roberta_out.last_hidden_state[:, 0, :].cpu()
+        cls_emb = roberta_out.last_hidden_state[:, 0, :]
         attentions = roberta_out.attentions
         stat_raw = compute_stat_features(text)
-        stat_norm = (stat_raw - stat_raw.mean(0)) / (stat_raw.std(0) + 1e-8)
+        stat_norm = (stat_raw - stat_mean) / (stat_std + 1e-8)
         logits = fusion_head(
             cls_emb.to(device),
             torch.tensor(stat_norm, dtype=torch.float32).to(device),
@@ -227,13 +252,14 @@ def analyze(req: AnalyzeRequest):
         probs = torch.softmax(out.logits, dim=-1).cpu().numpy()[0]
         attentions = out.attentions
 
-    label = "REAL" if probs.argmax() == 1 else "FAKE"
+    pred = int(probs.argmax())
+    label = "REAL" if pred == 0 else "FAKE"
     tokens = build_token_highlights(attentions, enc)
 
     return {
         "label": label,
-        "prob_fake": round(float(probs[0]), 4),
-        "prob_real": round(float(probs[1]), 4),
+        "prob_real": round(float(probs[0]), 4),
+        "prob_fake": round(float(probs[1]), 4),
         "tokens": tokens,
     }
 
@@ -252,10 +278,10 @@ async def analyze_stream(req: AnalyzeRequest):
 
             if req.model == "phase2" and fusion_head is not None:
                 roberta_out = roberta.roberta(**enc, output_attentions=True)
-                cls_emb = roberta_out.last_hidden_state[:, 0, :].cpu()
+                cls_emb = roberta_out.last_hidden_state[:, 0, :]
                 attentions = roberta_out.attentions
                 stat_raw = compute_stat_features(text)
-                stat_norm = (stat_raw - stat_raw.mean(0)) / (stat_raw.std(0) + 1e-8)
+                stat_norm = (stat_raw - stat_mean) / (stat_std + 1e-8)
                 logits = fusion_head(
                     cls_emb.to(device),
                     torch.tensor(stat_norm, dtype=torch.float32).to(device),
@@ -266,25 +292,49 @@ async def analyze_stream(req: AnalyzeRequest):
                 probs = torch.softmax(out.logits, dim=-1).cpu().numpy()[0]
                 attentions = out.attentions
 
-            label = "REAL" if probs.argmax() == 1 else "FAKE"
+            pred = int(probs.argmax())
+            label = "REAL" if pred == 0 else "FAKE"
             tokens = build_token_highlights(attentions, enc)
             return label, probs, tokens
 
     def search_web_claims(claims):
+        results = ""
+        # 1. Try DuckDuckGo news first (free, live, accurate)
         try:
-            gnews_key = os.getenv("GNEWS_API_KEY")
-            query = urllib.parse.quote(claims.strip())
-            url = f"https://gnews.io/api/v4/search?q={query}&lang=en&max=3&apikey={gnews_key}"
-            res = requests.get(url, timeout=10)
-            if res.status_code == 200:
-                data = res.json()
-                results = ""
-                for article in data.get("articles", []):
-                    results += f"Title: {article['title']}\nSnippet: {article['description']}\n\n"
-                return results if results else "No strict verifications found."
-            return f"Search API returned {res.status_code}"
+            with DDGS() as ddgs:
+                news_items = list(ddgs.news(claims.strip(), max_results=3))
+                if news_items:
+                    for item in news_items:
+                        results += f"Title: {item.get('title', '')}\nSnippet: {item.get('body', '')}\nSource: {item.get('source', '')}\n\n"
+                    if results:
+                        return results
+                # Fallback to general ddgs text search if no news
+                text_items = list(ddgs.text(claims.strip(), max_results=3))
+                if text_items:
+                    for item in text_items:
+                        results += f"Title: {item.get('title', '')}\nSnippet: {item.get('body', '')}\n\n"
+                    if results:
+                        return results
         except Exception as e:
-            return f"Search failed: {str(e)}"
+            print(f"DDGS search note: {e}")
+
+        # 2. Try GNews if key is present
+        gnews_key = os.getenv("GNEWS_API_KEY")
+        if gnews_key and gnews_key != "your_gnews_key":
+            try:
+                query = urllib.parse.quote(claims.strip())
+                url = f"https://gnews.io/api/v4/search?q={query}&lang=en&max=3&apikey={gnews_key}"
+                res = requests.get(url, timeout=10)
+                if res.status_code == 200:
+                    data = res.json()
+                    for article in data.get("articles", []):
+                        results += f"Title: {article['title']}\nSnippet: {article['description']}\n\n"
+                    if results:
+                        return results
+            except Exception as e:
+                print(f"GNews error: {e}")
+
+        return results if results else "No strict verifications found."
 
     agent_mode = req.agent_mode  # 'model' | 'agent' | 'both'
 
@@ -296,8 +346,8 @@ async def analyze_stream(req: AnalyzeRequest):
             verdict_data = {
                 "type": "verdict",
                 "label": label,
-                "prob_fake": round(float(probs[0]), 4),
-                "prob_real": round(float(probs[1]), 4),
+                "prob_real": round(float(probs[0]), 4),
+                "prob_fake": round(float(probs[1]), 4),
             }
             yield json.dumps(verdict_data) + "\n\n"
             for tok in tokens_result:
@@ -305,10 +355,30 @@ async def analyze_stream(req: AnalyzeRequest):
                 yield json.dumps({"type": "token", "token": tok}) + "\n\n"
             return
 
+        # Check API key for LLM-based modes
+        nvidia_key = os.getenv("NVIDIA_API_KEY")
+        if not nvidia_key or nvidia_key == "your_gemma_api_key":
+            yield json.dumps({"type": "status", "message": "Notice: NVIDIA_API_KEY not set in .env. Running high-precision local ML model..."}) + "\n\n"
+            label, probs, tokens_result = await asyncio.to_thread(run_local_ml)
+            verdict_data = {
+                "type": "verdict",
+                "label": label,
+                "prob_real": round(float(probs[0]), 4),
+                "prob_fake": round(float(probs[1]), 4),
+            }
+            yield json.dumps(verdict_data) + "\n\n"
+            for tok in tokens_result:
+                await asyncio.sleep(0.01)
+                yield json.dumps({"type": "token", "token": tok}) + "\n\n"
+            conf = max(probs[0], probs[1])
+            msg = f"Analysis based on custom RoBERTa + GPT-2 statistical features (Model Confidence: {conf:.1%}, Verdict: {label}).\nTo enable live web search & LLM synthesis, set a valid NVIDIA_API_KEY in backend/.env."
+            yield json.dumps({"type": "llm_chunk", "content": msg}) + "\n\n"
+            return
+
         # ── Shared LLM client (used by 'agent' and 'both') ──────────────────────
         client = ChatNVIDIA(
             model="google/gemma-3n-e2b-it",
-            api_key=os.getenv("NVIDIA_API_KEY"),
+            api_key=nvidia_key,
             temperature=0.8,
             top_p=0.9,
             max_completion_tokens=2048,
@@ -335,8 +405,8 @@ async def analyze_stream(req: AnalyzeRequest):
             verdict_data = {
                 "type": "verdict",
                 "label": label,
-                "prob_fake": round(float(probs[0]), 4),
-                "prob_real": round(float(probs[1]), 4),
+                "prob_real": round(float(probs[0]), 4),
+                "prob_fake": round(float(probs[1]), 4),
             }
             yield json.dumps(verdict_data) + "\n\n"
             for tok in tokens_result:
@@ -361,10 +431,10 @@ async def analyze_stream(req: AnalyzeRequest):
 3. Web evidence is ABSENT but ML confidence is HIGH (>85%) → lean toward ML verdict, note temporal lag.
 4. Both signals agree → high-confidence verdict in that direction.
 5. Signals conflict with low confidence → INCONCLUSIVE."""
-            weight_note = "- Live Web Verification (GNews): 60% weight — PRIMARY signal.\n- Custom Trained ML Model (RoBERTa + Fusion Head): 40% weight — SECONDARY signal."
+            weight_note = "- Live Web Verification: 60% weight — PRIMARY signal.\n- Custom Trained ML Model (RoBERTa + Fusion Head): 40% weight — SECONDARY signal."
         else:
             ml_section = "## NOTE\nNo ML model output available — base your verdict solely on the live web evidence."
-            weight_note = "- Live Web Verification (GNews): 100% weight — sole signal for this analysis."
+            weight_note = "- Live Web Verification: 100% weight — sole signal for this analysis."
 
         final_prompt = f"""You are VIGIL-AI, an advanced threat intelligence system determining if a news article is REAL or FAKE.
 
