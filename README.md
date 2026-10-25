@@ -1,4 +1,4 @@
-# NAME NOT DECIDED YET, AND THAT OLD ONE HAS TO BE CHANGED !!!!!!
+# Fake News Detector !
 
 **Truth Shield** is an advanced **Agentic Threat Intelligence & Fake News Detection platform**, initially developed under the codename *VIGIL-AI*. It features a multi-layered verification system that seamlessly balances fine-tuned Machine Learning models with live web verification provided by AI Agents.
 
