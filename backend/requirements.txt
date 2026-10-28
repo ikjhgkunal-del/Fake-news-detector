@@ -10,3 +10,4 @@ langchain-nvidia-ai-endpoints
 duckduckgo-search
 python-dotenv
 requests
+groq

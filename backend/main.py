@@ -20,6 +20,10 @@ load_dotenv()
 
 from langchain_nvidia_ai_endpoints import ChatNVIDIA
 from duckduckgo_search import DDGS
+try:
+    from groq import AsyncGroq
+except ImportError:
+    AsyncGroq = None
 from transformers import (
     AutoTokenizer,
     AutoModelForSequenceClassification,
@@ -299,7 +303,75 @@ async def analyze_stream(req: AnalyzeRequest):
 
     def search_web_claims(claims):
         results = ""
-        # 1. Try DuckDuckGo news first (free, live, accurate)
+        tinyfish_key = os.getenv("TINYFISH_API_KEY", "").strip()
+
+        # 1. Primary: TinyFish Web Search API
+        if tinyfish_key:
+            try:
+                headers = {"X-API-Key": tinyfish_key}
+                resp = requests.get(
+                    "https://api.search.tinyfish.ai",
+                    params={
+                        "query": claims.strip(),
+                        "domain_type": "web",
+                        "purpose": "Verify truthfulness of factual statements and news claims",
+                    },
+                    headers=headers,
+                    timeout=12,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    raw_items = data.get("results", [])
+                    top_urls = []
+                    for item in raw_items[:4]:
+                        title = item.get("title", "").strip()
+                        snippet = item.get("snippet", "").strip()
+                        url = item.get("url", "").strip()
+                        site = item.get("site_name", "").strip()
+                        date = item.get("date", "").strip()
+                        if title:
+                            d_str = f" [{date}]" if date else ""
+                            results += f"Source: {site}{d_str}\nTitle: {title}\n"
+                            if snippet:
+                                results += f"Snippet: {snippet}\n"
+                            if url:
+                                results += f"URL: {url}\n"
+                            results += "\n"
+                        if url and len(top_urls) < 1 and not snippet:
+                            top_urls.append(url)
+
+                    # If snippets are empty/short and we have a top URL, extract markdown text using TinyFish Fetch API
+                    if top_urls:
+                        try:
+                            fetch_resp = requests.post(
+                                "https://api.fetch.tinyfish.ai",
+                                json={
+                                    "urls": top_urls,
+                                    "format": "markdown",
+                                    "ttl": 3600,
+                                    "per_url_timeout_ms": 10000,
+                                },
+                                headers={
+                                    "X-API-Key": tinyfish_key,
+                                    "Content-Type": "application/json",
+                                },
+                                timeout=12,
+                            )
+                            if fetch_resp.status_code == 200:
+                                fdata = fetch_resp.json()
+                                for fitem in fdata.get("results", []):
+                                    ftext = (fitem.get("text") or "").strip()[:800]
+                                    if ftext:
+                                        results += f"Direct Source Evidence ({fitem.get('title', '')}):\n{ftext}\n\n"
+                        except Exception as fe:
+                            print(f"TinyFish fetch note: {fe}")
+
+                    if results.strip():
+                        return results.strip()
+            except Exception as e:
+                print(f"TinyFish search note: {e}")
+
+        # 2. Fallback: DuckDuckGo news / text search
         try:
             with DDGS() as ddgs:
                 news_items = list(ddgs.news(claims.strip(), max_results=3))
@@ -318,7 +390,7 @@ async def analyze_stream(req: AnalyzeRequest):
         except Exception as e:
             print(f"DDGS search note: {e}")
 
-        # 2. Try GNews if key is present
+        # 3. Fallback: GNews if key is present
         gnews_key = os.getenv("GNEWS_API_KEY")
         if gnews_key and gnews_key != "your_gnews_key":
             try:
@@ -355,12 +427,18 @@ async def analyze_stream(req: AnalyzeRequest):
                 yield json.dumps({"type": "token", "token": tok}) + "\n\n"
             return
 
-        # Check API key for LLM-based modes
+        # Check API keys for LLM-based modes (Groq primary, NVIDIA secondary)
+        groq_key = os.getenv("GROQ_API_KEY", "").strip()
+        groq_model = os.getenv("GROQ_MODEL", "qwen/qwen3.8-27b").strip()
         nvidia_key = os.getenv("NVIDIA_API_KEY", "")
         if nvidia_key:
             nvidia_key = nvidia_key.replace("Bearer ", "").strip()
-        if not nvidia_key or nvidia_key == "your_gemma_api_key":
-            yield json.dumps({"type": "status", "message": "Notice: NVIDIA_API_KEY not set in .env. Running high-precision local ML model..."}) + "\n\n"
+
+        has_groq = bool(AsyncGroq and groq_key and groq_key != "your_groq_api_key")
+        has_nvidia = bool(nvidia_key and nvidia_key != "your_gemma_api_key" and nvidia_key != "your_nvidia_api_key")
+
+        if not has_groq and not has_nvidia:
+            yield json.dumps({"type": "status", "message": "Notice: LLM API key not set in .env. Running high-precision local ML model..."}) + "\n\n"
             label, probs, tokens_result = await asyncio.to_thread(run_local_ml)
             verdict_data = {
                 "type": "verdict",
@@ -373,33 +451,50 @@ async def analyze_stream(req: AnalyzeRequest):
                 await asyncio.sleep(0.01)
                 yield json.dumps({"type": "token", "token": tok}) + "\n\n"
             conf = max(probs[0], probs[1])
-            msg = f"Analysis based on custom RoBERTa + GPT-2 statistical features (Model Confidence: {conf:.1%}, Verdict: {label}).\nTo enable live web search & LLM synthesis, set a valid NVIDIA_API_KEY in backend/.env."
+            msg = f"Analysis based on custom RoBERTa + GPT-2 statistical features (Model Confidence: {conf:.1%}, Verdict: {label}).\nTo enable live web search & LLM synthesis, set GROQ_API_KEY in backend/.env."
             yield json.dumps({"type": "llm_chunk", "content": msg}) + "\n\n"
             return
 
-        # ── Shared LLM client (used by 'agent' and 'both') ──────────────────────
-        model_name = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-bolt-e4b")
-        try:
-            client = ChatNVIDIA(
-                model=model_name,
-                api_key=nvidia_key,
-                temperature=0.7,
-                top_p=0.9,
-                max_completion_tokens=2048,
-            )
-        except Exception as e:
-            yield json.dumps({"type": "llm_chunk", "content": f"Failed to initialize NVIDIA NIM client ({model_name}): {str(e)}"}) + "\n\n"
-            return
+        # Initialize Groq client or NVIDIA client
+        groq_client = None
+        nvidia_client = None
+        extract_prompt = f"Extract 2 to 4 crucial search keywords identifying the core claim, person, or event from this text to use as a web search query. Output ONLY the keywords separated by spaces. DO NOT use quotes, bullet points, or extra text:\n\n{text[:1500]}"
+        claims = text[:80]
 
-        yield json.dumps({"type": "status", "message": f"Extracting search parameters via {model_name.split('/')[-1]}..."}) + "\n\n"
-        extract_prompt = f"Extract 2 to 4 crucial keywords identifying the core event from this text to use as a search query. Output ONLY the keywords separated by spaces. DO NOT use bullet points or extra text:\n\n{text[:1500]}"
-        try:
-            claims_res = await asyncio.to_thread(client.invoke, [{"role": "user", "content": extract_prompt}])
-            claims = str(claims_res.content).strip()
-        except Exception as e:
-            claims = text[:80]
+        if has_groq:
+            groq_client = AsyncGroq(api_key=groq_key)
+            yield json.dumps({"type": "status", "message": f"Extracting search parameters via {groq_model.split('/')[-1]} on Groq..."}) + "\n\n"
+            try:
+                extract_resp = await groq_client.chat.completions.create(
+                    model=groq_model,
+                    messages=[{"role": "user", "content": extract_prompt}],
+                    temperature=0.2,
+                    max_tokens=60,
+                )
+                if extract_resp.choices and extract_resp.choices[0].message.content:
+                    claims = extract_resp.choices[0].message.content.strip()
+            except Exception as e:
+                print(f"Groq extract note: {e}")
+                claims = text[:80]
+        elif has_nvidia:
+            nvidia_model = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-bolt-e4b")
+            yield json.dumps({"type": "status", "message": f"Extracting search parameters via {nvidia_model.split('/')[-1]}..."}) + "\n\n"
+            try:
+                nvidia_client = ChatNVIDIA(
+                    model=nvidia_model,
+                    api_key=nvidia_key,
+                    temperature=0.7,
+                    top_p=0.9,
+                    max_completion_tokens=2048,
+                )
+                claims_res = await asyncio.to_thread(nvidia_client.invoke, [{"role": "user", "content": extract_prompt}])
+                claims = str(claims_res.content).strip()
+            except Exception as e:
+                claims = text[:80]
 
-        yield json.dumps({"type": "status", "message": "Verifying facts against live web data..."}) + "\n\n"
+        tinyfish_key = os.getenv("TINYFISH_API_KEY", "").strip()
+        search_desc = "TinyFish Web Search" if tinyfish_key else "Live Web Engine"
+        yield json.dumps({"type": "status", "message": f"Verifying facts against live web data via {search_desc}..."}) + "\n\n"
         web_context = await asyncio.to_thread(search_web_claims, claims)
 
         # ── MODE: both — also run ML scoring ───────────────────────────────────
@@ -452,7 +547,7 @@ async def analyze_stream(req: AnalyzeRequest):
 {weight_note}
 
 ## TARGET TEXT
-\"{text[:900]}\"
+\"{text[:1000]}\"
 
 ## LIVE WEB EVIDENCE
 {"CORROBORATING ARTICLES FOUND:" if web_has_hits else "NO CORROBORATING ARTICLES FOUND in live news sources (general knowledge verification applies)."}
@@ -464,16 +559,37 @@ Write 2-3 sentences of reasoned analysis, then conclude:
 **VERDICT: [REAL / FAKE / INCONCLUSIVE]** — one decisive bottom-line sentence.
 """
 
-        try:
-            async for chunk in client.astream([{"role": "user", "content": final_prompt}]):
-                if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
-                    reasoning = chunk.additional_kwargs["reasoning_content"]
-                    if reasoning:
-                        yield json.dumps({"type": "llm_chunk", "reasoning": reasoning}) + "\n\n"
-                if chunk.content:
-                    yield json.dumps({"type": "llm_chunk", "content": chunk.content}) + "\n\n"
-        except Exception as e:
-            yield json.dumps({"type": "llm_chunk", "content": f"\n\n[Inference Error: {str(e)}]"}) + "\n\n"
+        if has_groq and groq_client is not None:
+            try:
+                stream = await groq_client.chat.completions.create(
+                    model=groq_model,
+                    messages=[{"role": "user", "content": final_prompt}],
+                    temperature=0.6,
+                    max_tokens=2048,
+                    stream=True,
+                )
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta if chunk.choices else None
+                    if delta:
+                        if hasattr(delta, "reasoning") and delta.reasoning:
+                            yield json.dumps({"type": "llm_chunk", "reasoning": delta.reasoning}) + "\n\n"
+                        if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                            yield json.dumps({"type": "llm_chunk", "reasoning": delta.reasoning_content}) + "\n\n"
+                        if delta.content:
+                            yield json.dumps({"type": "llm_chunk", "content": delta.content}) + "\n\n"
+            except Exception as e:
+                yield json.dumps({"type": "llm_chunk", "content": f"\n\n[Groq Inference Error: {str(e)}]"}) + "\n\n"
+        elif has_nvidia and nvidia_client is not None:
+            try:
+                async for chunk in nvidia_client.astream([{"role": "user", "content": final_prompt}]):
+                    if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
+                        reasoning = chunk.additional_kwargs["reasoning_content"]
+                        if reasoning:
+                            yield json.dumps({"type": "llm_chunk", "reasoning": reasoning}) + "\n\n"
+                    if chunk.content:
+                        yield json.dumps({"type": "llm_chunk", "content": chunk.content}) + "\n\n"
+            except Exception as e:
+                yield json.dumps({"type": "llm_chunk", "content": f"\n\n[NVIDIA Inference Error: {str(e)}]"}) + "\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
