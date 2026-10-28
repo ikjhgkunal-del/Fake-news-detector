@@ -15,6 +15,10 @@
   // reference to auto-scroll container
   let scrollContainer;
 
+  // Word count
+  $: wordCount = textInput.trim() ? textInput.trim().split(/\s+/).length : 0;
+  $: isTooShort = wordCount > 0 && wordCount < 30;
+
   async function handleAnalyze() {
     if (!textInput.trim()) return;
     
@@ -67,6 +71,8 @@
             } else if (data.type === 'llm_chunk') {
               if (data.reasoning) reasoningContent += data.reasoning;
               if (data.content) llmContent += data.content;
+            } else if (data.type === 'error') {
+              error = data.message;
             }
             
             // Auto scroll explicitly on layout updates
@@ -229,9 +235,18 @@
       <textarea 
         bind:value={textInput} 
         on:keydown={handleKeydown}
-        placeholder="Type or paste text to analyze... (Ctrl+Enter to submit)"
+        placeholder="Paste a news article or headline to analyze... (Ctrl+Enter to submit)"
         disabled={isAnalyzing}
       ></textarea>
+
+      {#if isTooShort}
+        <div class="short-text-warning">
+          <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          <span><strong>Text too short ({wordCount} words).</strong> This model was trained on full news articles (200+ words). Short factual statements are <em>out-of-distribution</em> and will produce unreliable results. Paste a complete news article or paragraph for accurate detection.</span>
+        </div>
+      {:else if wordCount > 0}
+        <div class="word-count-ok">{wordCount} words</div>
+      {/if}
       
       <div class="input-footer">
         <div class="footer-left">
@@ -538,6 +553,44 @@
   textarea::placeholder {
     color: #9ca3af;
   }
+
+  .short-text-warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    background: rgba(234, 179, 8, 0.08);
+    border: 1px solid rgba(234, 179, 8, 0.3);
+    border-radius: var(--radius-md);
+    padding: 0.55rem 0.8rem;
+    margin: 0.3rem 0.4rem;
+    font-size: 0.78rem;
+    color: #fbbf24;
+    line-height: 1.5;
+  }
+
+  .short-text-warning svg {
+    flex-shrink: 0;
+    margin-top: 2px;
+    color: #fbbf24;
+  }
+
+  .short-text-warning strong {
+    color: #fde68a;
+  }
+
+  .short-text-warning em {
+    font-style: italic;
+    color: #f59e0b;
+  }
+
+  .word-count-ok {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    text-align: right;
+    padding: 0 0.6rem 0.1rem 0;
+    opacity: 0.7;
+  }
+
 
   .input-footer {
     display: flex;
