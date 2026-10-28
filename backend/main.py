@@ -356,7 +356,9 @@ async def analyze_stream(req: AnalyzeRequest):
             return
 
         # Check API key for LLM-based modes
-        nvidia_key = os.getenv("NVIDIA_API_KEY")
+        nvidia_key = os.getenv("NVIDIA_API_KEY", "")
+        if nvidia_key:
+            nvidia_key = nvidia_key.replace("Bearer ", "").strip()
         if not nvidia_key or nvidia_key == "your_gemma_api_key":
             yield json.dumps({"type": "status", "message": "Notice: NVIDIA_API_KEY not set in .env. Running high-precision local ML model..."}) + "\n\n"
             label, probs, tokens_result = await asyncio.to_thread(run_local_ml)
@@ -376,18 +378,26 @@ async def analyze_stream(req: AnalyzeRequest):
             return
 
         # ── Shared LLM client (used by 'agent' and 'both') ──────────────────────
-        client = ChatNVIDIA(
-            model="google/gemma-3n-e2b-it",
-            api_key=nvidia_key,
-            temperature=0.8,
-            top_p=0.9,
-            max_completion_tokens=2048,
-        )
+        model_name = os.getenv("NVIDIA_MODEL", "nvidia/nemotron-3.5-bolt-e4b")
+        try:
+            client = ChatNVIDIA(
+                model=model_name,
+                api_key=nvidia_key,
+                temperature=0.7,
+                top_p=0.9,
+                max_completion_tokens=2048,
+            )
+        except Exception as e:
+            yield json.dumps({"type": "llm_chunk", "content": f"Failed to initialize NVIDIA NIM client ({model_name}): {str(e)}"}) + "\n\n"
+            return
 
-        yield json.dumps({"type": "status", "message": "Extracting search parameters..."}) + "\n\n"
+        yield json.dumps({"type": "status", "message": f"Extracting search parameters via {model_name.split('/')[-1]}..."}) + "\n\n"
         extract_prompt = f"Extract 2 to 4 crucial keywords identifying the core event from this text to use as a search query. Output ONLY the keywords separated by spaces. DO NOT use bullet points or extra text:\n\n{text[:1500]}"
-        claims_res = await asyncio.to_thread(client.invoke, [{"role": "user", "content": extract_prompt}])
-        claims = claims_res.content
+        try:
+            claims_res = await asyncio.to_thread(client.invoke, [{"role": "user", "content": extract_prompt}])
+            claims = str(claims_res.content).strip()
+        except Exception as e:
+            claims = text[:80]
 
         yield json.dumps({"type": "status", "message": "Verifying facts against live web data..."}) + "\n\n"
         web_context = await asyncio.to_thread(search_web_claims, claims)
@@ -423,44 +433,47 @@ async def analyze_stream(req: AnalyzeRequest):
             ml_conf = max(probs[0], probs[1])
             ml_section = f"""## ML STRUCTURAL ANALYSIS (40% weight)
 - Prediction: {label} | Confidence: {ml_conf:.2%}
-- Note: Trained on pre-2024 data — moderate caution for highly recent breaking events.
+- Note: Trained on journalistic articles (200-1000+ words). Short factual phrases are out-of-distribution.
 
 ## REASONING RULES
-1. Web evidence CONFIRMS claims → lean REAL, use ML as a confidence booster.
-2. Web evidence CONTRADICTS claims → lean FAKE regardless of ML output.
-3. Web evidence is ABSENT but ML confidence is HIGH (>85%) → lean toward ML verdict, note temporal lag.
-4. Both signals agree → high-confidence verdict in that direction.
-5. Signals conflict with low confidence → INCONCLUSIVE."""
-            weight_note = "- Live Web Verification: 60% weight — PRIMARY signal.\n- Custom Trained ML Model (RoBERTa + Fusion Head): 40% weight — SECONDARY signal."
+1. General facts, common knowledge, physical reality, and basic truths (e.g. "a car runs on 4 wheels", scientific laws, definitions) are ALWAYS evaluated for physical truth. If the statement is factually true in reality, verdict is REAL.
+2. Web evidence CONFIRMS claims → lean REAL, use ML as a confidence booster.
+3. Web evidence CONTRADICTS claims → lean FAKE regardless of ML output.
+4. If the text is a short factual statement (fewer than 30 words), note the factual accuracy in reality while explaining that journalistic ML models are calibrated for long news articles.
+5. Both signals agree → high-confidence verdict in that direction."""
+            weight_note = "- Factual Verification & Web Evidence: 60% weight — PRIMARY signal.\n- Custom Trained ML Model (RoBERTa + Fusion Head): 40% weight — SECONDARY signal."
         else:
-            ml_section = "## NOTE\nNo ML model output available — base your verdict solely on the live web evidence."
-            weight_note = "- Live Web Verification: 100% weight — sole signal for this analysis."
+            ml_section = "## NOTE\nNo ML model output available — base your verdict on factual accuracy and web evidence."
+            weight_note = "- Factual Verification & Live Evidence: 100% weight — sole signal for this analysis."
 
-        final_prompt = f"""You are VIGIL-AI, an advanced threat intelligence system determining if a news article is REAL or FAKE.
+        final_prompt = f"""You are VIGIL-AI, an advanced threat intelligence system determining if a statement or news article is REAL or FAKE.
 
 ## SCORING WEIGHTS
 {weight_note}
 
 ## TARGET TEXT
-"{text[:900]}"
+\"{text[:900]}\"
 
 ## LIVE WEB EVIDENCE
-{"CORROBORATING ARTICLES FOUND:" if web_has_hits else "NO CORROBORATING EVIDENCE FOUND in live news sources."}
+{"CORROBORATING ARTICLES FOUND:" if web_has_hits else "NO CORROBORATING ARTICLES FOUND in live news sources (general knowledge verification applies)."}
 {web_context}
 
 {ml_section}
 
-Write 2-3 sentences of weighted analysis, then conclude:
+Write 2-3 sentences of reasoned analysis, then conclude:
 **VERDICT: [REAL / FAKE / INCONCLUSIVE]** — one decisive bottom-line sentence.
 """
 
-        async for chunk in client.astream([{"role": "user", "content": final_prompt}]):
-            if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
-                reasoning = chunk.additional_kwargs["reasoning_content"]
-                if reasoning:
-                    yield json.dumps({"type": "llm_chunk", "reasoning": reasoning}) + "\n\n"
-            if chunk.content:
-                yield json.dumps({"type": "llm_chunk", "content": chunk.content}) + "\n\n"
+        try:
+            async for chunk in client.astream([{"role": "user", "content": final_prompt}]):
+                if hasattr(chunk, "additional_kwargs") and "reasoning_content" in chunk.additional_kwargs:
+                    reasoning = chunk.additional_kwargs["reasoning_content"]
+                    if reasoning:
+                        yield json.dumps({"type": "llm_chunk", "reasoning": reasoning}) + "\n\n"
+                if chunk.content:
+                    yield json.dumps({"type": "llm_chunk", "content": chunk.content}) + "\n\n"
+        except Exception as e:
+            yield json.dumps({"type": "llm_chunk", "content": f"\n\n[Inference Error: {str(e)}]"}) + "\n\n"
 
     return StreamingResponse(event_generator(), media_type="text/event-stream")
 
