@@ -11,6 +11,8 @@
   let statuses = [];
   let llmContent = '';
   let reasoningContent = '';
+  let factVerdict = null;
+  let textareaElement;
 
   // reference to auto-scroll container
   let scrollContainer;
@@ -18,16 +20,116 @@
   // Word count
   $: wordCount = textInput.trim() ? textInput.trim().split(/\s+/).length : 0;
   $: isTooShort = wordCount > 0 && wordCount < 30;
+  $: reportSections = parseReport(llmContent);
+
+  function resizeTextarea() {
+    if (!textareaElement) return;
+    const maxHeight = Math.min(window.innerHeight * 0.38, 320);
+    textareaElement.style.height = 'auto';
+    const nextHeight = Math.min(Math.max(textareaElement.scrollHeight, 82), maxHeight);
+    textareaElement.style.height = `${nextHeight}px`;
+    textareaElement.style.overflowY = textareaElement.scrollHeight > maxHeight ? 'auto' : 'hidden';
+  }
+
+  function handleTextInput(event) {
+    textInput = event.currentTarget.value;
+    resizeTextarea();
+  }
+
+  function clearAnalysis() {
+    textInput = '';
+    tokens = [];
+    verdict = null;
+    factVerdict = null;
+    statuses = [];
+    llmContent = '';
+    reasoningContent = '';
+    error = null;
+    requestAnimationFrame(resizeTextarea);
+  }
+
+  function safeHttpUrl(value) {
+    try {
+      const parsed = new URL(value);
+      return ['http:', 'https:'].includes(parsed.protocol) ? parsed.href : null;
+    } catch {
+      return null;
+    }
+  }
+
+  function parseReport(content) {
+    const sections = [];
+    let activeClaim = null;
+    let activeSources = null;
+
+    for (const rawLine of content.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const claimMatch = line.match(/^\*{0,2}Claim\s+(\d+)\s*:\s*(.*?)\*{0,2}$/i);
+      if (claimMatch) {
+        activeClaim = {
+          type: 'claim',
+          number: claimMatch[1],
+          title: claimMatch[2].replace(/\*\*/g, '').trim(),
+          paragraphs: [],
+          references: [],
+        };
+        sections.push(activeClaim);
+        activeSources = null;
+        continue;
+      }
+
+      if (/^\*{0,2}Sources\*{0,2}$/i.test(line)) {
+        activeSources = { type: 'sources', items: [] };
+        sections.push(activeSources);
+        activeClaim = null;
+        continue;
+      }
+
+      if (/^VERDICT\s*:/i.test(line)) continue;
+
+      const referencesMatch = line.match(/^Sources?\s*:\s*(.+)$/i);
+      if (referencesMatch) {
+        const references = referencesMatch[1].match(/\[S\d+\]/g) || [];
+        if (activeClaim) activeClaim.references.push(...references);
+        else if (activeSources) activeSources.items.push({ text: referencesMatch[1] });
+        else sections.push({ type: 'paragraph', text: referencesMatch[1] });
+        continue;
+      }
+
+      const urlCandidate = line.match(/https?:\/\/\S+/i)?.[0]?.replace(/[),.;]+$/, '');
+      const safeUrl = urlCandidate ? safeHttpUrl(urlCandidate) : null;
+      if (safeUrl) {
+        if (!activeSources) {
+          activeSources = { type: 'sources', items: [] };
+          sections.push(activeSources);
+          activeClaim = null;
+        }
+        activeSources.items.push({ url: safeUrl, domain: new URL(safeUrl).hostname.replace(/^www\./, '') });
+        continue;
+      }
+
+      const text = line.replace(/\*\*(.*?)\*\*/g, '$1').replace(/^[-*]\s+/, '').trim();
+      if (activeClaim) activeClaim.paragraphs.push(text);
+      else if (activeSources) activeSources.items.push({ text });
+      else sections.push({ type: 'paragraph', text });
+    }
+
+    return sections;
+  }
 
   async function handleAnalyze() {
     if (!textInput.trim()) return;
     
     const payloadText = textInput;
     textInput = ''; // Clear immediately
+    requestAnimationFrame(resizeTextarea);
     
     isAnalyzing = true;
     tokens = [];
     verdict = null;
+    factVerdict = null;
     error = null;
     statuses = [];
     llmContent = '';
@@ -64,6 +166,8 @@
             const data = JSON.parse(part);
             if (data.type === 'verdict') {
               verdict = data;
+            } else if (data.type === 'fact_verdict') {
+              factVerdict = data.label;
             } else if (data.type === 'token') {
               tokens = [...tokens, data.token];
             } else if (data.type === 'status') {
@@ -124,7 +228,7 @@
         <div class="empty-state animate-fade-in">
           <div class="eyebrow"><span class="eyebrow-line"></span> ARTICLE CHECK</div>
           <h1 class="super-title">Check the story.<br /><span>Read the signals.</span></h1>
-          <p class="subtitle">Paste an article to review its probabilities, highlighted language, and optional agent notes.</p>
+          <p class="subtitle">Paste a story to inspect the model’s language signal and compare its key claims with live sources.</p>
         </div>
       {/if}
 
@@ -144,10 +248,15 @@
       {/if}
 
       {#if verdict}
-        <div class="verdict-card animate-fade-in">
-          <div class="verdict-banner">
-            <h1 class="{verdict.label === 'FAKE' ? 'text-critical' : 'text-safe'}">{verdict.label}</h1>
+        <div class="model-card animate-fade-in">
+          <div class="model-card-heading">
+            <div>
+              <span class="section-kicker">Local model</span>
+              <h2>Text-pattern signal</h2>
+            </div>
+            <span class="model-note">Not a factual verdict</span>
           </div>
+          <div class="model-signal-label {verdict.label === 'FAKE' ? 'text-critical' : 'text-safe'}">{verdict.label} signal</div>
           <div class="verdict-details">
             <div class="prob-row">
               <span class="prob-label">Real</span>
@@ -159,6 +268,19 @@
               <div class="bar-bg"><div class="bar bg-critical" style="width: {verdict.prob_fake * 100}%"></div></div>
               <span class="prob-val">{(verdict.prob_fake * 100).toFixed(1)}%</span>
             </div>
+          </div>
+        </div>
+      {/if}
+
+      {#if factVerdict}
+        <div class="source-verdict-card animate-fade-in verdict-{factVerdict.toLowerCase()}">
+          <div class="source-verdict-icon" aria-hidden="true">
+            {#if factVerdict === 'REAL'}✓{:else if factVerdict === 'FAKE'}!{:else}i{/if}
+          </div>
+          <div class="source-verdict-copy">
+            <span class="section-kicker">Source-based assessment</span>
+            <h2>{factVerdict === 'INCONCLUSIVE' ? 'Not enough evidence' : `This story appears ${factVerdict.toLowerCase()}`}</h2>
+            <p>{factVerdict === 'INCONCLUSIVE' ? 'The available sources did not support a clear conclusion.' : 'Key claims were compared with the sources listed below.'}</p>
           </div>
         </div>
       {/if}
@@ -188,12 +310,57 @@
         <div class="llm-container animate-fade-in">
            {#if reasoningContent}
              <details class="reasoning-block">
-               <summary>Intelligent Agent Thought Process</summary>
+               <summary>Analysis details</summary>
                <div class="reasoning-text">{reasoningContent}</div>
              </details>
            {/if}
            {#if llmContent}
-             <div class="llm-output">{llmContent}</div>
+             <div class="report-heading">
+               <div>
+                 <span class="section-kicker">Claim-by-claim review</span>
+                 <h2>What the sources say</h2>
+               </div>
+               <span class="report-tag">Evidence report</span>
+             </div>
+             <div class="report-sections">
+               {#each reportSections as section, i}
+                 {#if section.type === 'claim'}
+                   <article class="claim-card">
+                     <div class="claim-heading">
+                       <span class="claim-number">Claim {section.number}</span>
+                       <h3>{section.title}</h3>
+                     </div>
+                     {#each section.paragraphs as paragraph}
+                       <p>{paragraph}</p>
+                     {/each}
+                     {#if section.references.length > 0}
+                       <div class="reference-list" aria-label="Sources cited for this claim">
+                         {#each [...new Set(section.references)] as reference}
+                           <span class="reference-chip">{reference}</span>
+                         {/each}
+                       </div>
+                     {/if}
+                   </article>
+                 {:else if section.type === 'sources'}
+                   <section class="sources-section">
+                     <h3>Sources</h3>
+                     {#each section.items as item, j}
+                       {#if item.url}
+                         <a class="source-link" href={item.url} target="_blank" rel="noopener noreferrer">
+                           <span class="source-domain">{item.domain}</span>
+                           <span class="source-url">{item.url}</span>
+                           <span class="source-open" aria-hidden="true">↗</span>
+                         </a>
+                       {:else if item.text}
+                         <p class="source-note">{item.text}</p>
+                       {/if}
+                     {/each}
+                   </section>
+                 {:else}
+                   <p class="report-paragraph">{section.text}</p>
+                 {/if}
+               {/each}
+             </div>
            {/if}
         </div>
       {/if}
@@ -205,8 +372,6 @@
         </div>
       {/if}
       
-      <!-- Spacing block for input -->
-      <div style="height: 360px;"></div>
     </div>
   </div>
 
@@ -214,16 +379,19 @@
     <div class="input-card card">
       <div class="input-heading"><strong>Article text</strong><span>Ctrl + Enter to analyze</span></div>
       <textarea 
+        bind:this={textareaElement}
         bind:value={textInput} 
+        on:input={handleTextInput}
         on:keydown={handleKeydown}
-        placeholder="Paste an article or headline…"
+        placeholder="Paste or type a news story…"
+        aria-label="Article text to fact-check"
         disabled={isAnalyzing}
       ></textarea>
 
       {#if isTooShort}
         <div class="short-text-warning">
           <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-          <span><strong>Text too short ({wordCount} words).</strong> This model was trained on full news articles (200+ words). Short factual statements are <em>out-of-distribution</em> and will produce unreliable results. Paste a complete news article or paragraph for accurate detection.</span>
+          <span><strong>Short input ({wordCount} words).</strong> Add more of the story for context. Brief claims are harder to assess reliably.</span>
         </div>
       {:else if wordCount > 0}
         <div class="word-count-ok">{wordCount} words</div>
@@ -231,7 +399,7 @@
       
       <div class="input-footer">
         <div class="footer-left">
-          <button class="icon-btn" on:click={() => {textInput = ''; tokens = []; verdict = null;}} title="Clear" disabled={isAnalyzing}>
+          <button class="icon-btn" on:click={clearAnalysis} title="Clear article and results" aria-label="Clear article and results" disabled={isAnalyzing}>
             <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"></path><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
           </button>
           
