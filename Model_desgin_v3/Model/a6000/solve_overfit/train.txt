@@ -1,4 +1,4 @@
-(.venv) C:\gyanendra\non_aug>python train_a6000_slove_overfit.py
+(.venv) <local-workspace>>python train_a6000_slove_overfit.py
 Loading dataset...
 Total samples: 240,000 | Real: 120,000 | Fake: 120,000
 Map: 100%|███████████████████████████████████████████████████████████████████████████| 240000/240000 [03:51<00:00, 1036.40 examples/s]
@@ -399,4 +399,4 @@ weighted avg       0.99      0.99      0.99     24000
 ==========================================================================================
 
 
-(.venv) C:\gyanendra\non_aug>
+(.venv) <local-workspace>>

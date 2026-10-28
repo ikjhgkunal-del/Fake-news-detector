@@ -2,18 +2,7 @@
 
 ---
 
-names of members
-Gyanendra Prakash
-student bennett university
-enrollment : s24cseu0771
-email : gyaanendrap@gmail.com
-github: Gyaanendra
-
-Goutam mittal
-student bennett university
-enrollment : s24cseu0785
-email : goutammittal2005@gmail.com
-Github : goutam922
+Current maintainer: Kunal
 
 ---
 
@@ -252,9 +241,7 @@ then we clean and perprocessed
 
 ---
 
-github- for all codes and everythings
-
-https://github.com/Gyaanendra/AIML-PROJECT-CSET312
+Project source: this repository.
 
 research paper we took for insiptation ideas
 

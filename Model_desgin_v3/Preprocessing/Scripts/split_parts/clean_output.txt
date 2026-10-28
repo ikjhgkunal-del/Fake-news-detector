@@ -1,5 +1,5 @@
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python clean.py
+(.venv) <local-path>/split_parts>python clean.py
 
 ============================================================
 CLEANING: real_120k_lfm.csv
@@ -69,4 +69,4 @@ CLEANING: fake_120k_lfm_part_4.csv
 ALL FILES SAVED TO 'partial_clean/'
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>
+(.venv) <local-path>/split_parts>

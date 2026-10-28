@@ -1,7 +1,7 @@
 Microsoft Windows [Version 10.0.26200.8037]
 (c) Microsoft Corporation. All rights reserved.
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python combine.py
+(.venv) <local-path>/split_parts>python combine.py
 [READ]  real_120k_lfm.csv                        →  30,000 rows
 [READ]  real_120k_lfm_part_2.csv                 →  30,000 rows
 [READ]  real_120k_lfm_part3.csv                  →  30,000 rows
@@ -22,7 +22,7 @@ Microsoft Windows [Version 10.0.26200.8037]
 [SAVED] → final\dataset_final.csv
 [DONE]  Shape: (240000, 2)
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python final_csv.py
+(.venv) <local-path>/split_parts>python final_csv.py
 Total rows: 240,000
 
 Label distribution:
@@ -31,4 +31,4 @@ label
 0    120000
 Name: count, dtype: int64
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>
+(.venv) <local-path>/split_parts>

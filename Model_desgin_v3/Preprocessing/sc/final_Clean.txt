@@ -1,7 +1,7 @@
 Microsoft Windows [Version 10.0.26200.8037]
 (c) Microsoft Corporation. All rights reserved.
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\Scripts\split_parts\final>python final_clean.py
+(.venv) <local-path>/final>python final_clean.py
 Cleaning: dataset_final.csv  ->  dataset_cleaned.csv
 
   Processed 10,000 rows...
@@ -36,4 +36,4 @@ Cleaning: dataset_final.csv  ->  dataset_cleaned.csv
    Rows kept         : 240,000
    Output saved      : dataset_cleaned.csv
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\Scripts\split_parts\final>
+(.venv) <local-path>/final>

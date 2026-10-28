@@ -1,5 +1,5 @@
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -39,7 +39,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -79,10 +79,10 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>
+(.venv) <local-path>/split_parts>
 
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -122,7 +122,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -162,7 +162,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -202,7 +202,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -242,7 +242,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -282,7 +282,7 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>python ex.py
+(.venv) <local-path>/split_parts>python ex.py
 ============================================================
 SELECT A FILE:
 ============================================================
@@ -322,4 +322,4 @@ tomng/lfm2.5-instruct:latest
 
 ============================================================
 
-(.venv) H:\CSET312_project\AIML-PROJECT-CSET312\Model_desgin_v3\split_parts>
+(.venv) <local-path>/split_parts>

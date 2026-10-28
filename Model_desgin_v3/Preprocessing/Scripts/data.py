@@ -8,7 +8,7 @@ from pathlib import Path
 # CONFIGURATION
 # ────────────────────────────────────────────────
 
-DATASET_SLUG = "gyaanendraprakash/aiml-project-cset312"
+DATASET_SLUG = os.environ.get("KAGGLE_DATASET_SLUG", "").strip()
 
 # Expected filenames in the dataset (adjust if names are slightly different)
 # After (correct - with spaces)
@@ -61,6 +61,10 @@ def filter_and_sample(df: pd.DataFrame, n_rows: int = KEEP_ROWS) -> pd.DataFrame
 
 
 def main():
+    if not DATASET_SLUG:
+        print("Set KAGGLE_DATASET_SLUG to a Kaggle owner/dataset slug before downloading.")
+        return
+
     print("Downloading dataset from Kaggle...")
     try:
         dataset_path = kagglehub.dataset_download(DATASET_SLUG)

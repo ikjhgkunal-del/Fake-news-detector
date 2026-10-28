@@ -1,5 +1,5 @@
 # model traing
 
-## name Gyanendra Prakash
+## Training notes
 
 # Dont close
