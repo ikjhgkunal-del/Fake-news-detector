@@ -1,4 +1,4 @@
-(.venv) C:\gyanendra\non_aug>python train_rtx_a6000.py
+(.venv) <local-workspace>>python train_rtx_a6000.py
 Loading data...
 Total: 240000 | Real: 120000 | Fake: 120000
 Warning: You are sending unauthenticated requests to the HF Hub. Please set a HF_TOKEN to enable higher rate limits and faster downloads.

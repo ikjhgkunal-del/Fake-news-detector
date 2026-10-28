@@ -1,4 +1,4 @@
-(.venv) C:\gyanendra\non_aug>python Phase2_train.py
+(.venv) <local-workspace>>python Phase2_train.py
 Device: cuda
 Loading data...
 Total: 240000 | Real: 120000 | Fake: 120000
@@ -12,7 +12,7 @@ Loading weights: 100%|███████████████████�
 Extracting CLS embeddings (frozen RoBERTa)...
   train (192000 samples)...
 
-(.venv) C:\gyanendra\non_aug>python Phase2_train.py
+(.venv) <local-workspace>>python Phase2_train.py
 Device: cuda
 Loading data...
 Total: 240000 | Real: 120000 | Fake: 120000
@@ -69,4 +69,4 @@ weighted avg       0.99      0.99      0.99     24000
  Phase 2 done — saved to ./phase2_fusion_head/fusion_head.pt
   Logs : ./phase2_fusion_head/fusion_head_logs.csv
 
-(.venv) C:\gyanendra\non_aug>
+(.venv) <local-workspace>>
