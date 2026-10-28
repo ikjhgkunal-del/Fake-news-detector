@@ -116,35 +116,15 @@
 
 <div class="chat-container">
   <div class="chat-bg"></div>
-  <div class="grain-overlay"></div>
-
-  <!-- Scattered background decorations -->
-  <div class="bg-scatter" aria-hidden="true">
-    <span class="scatter-word" style="top:8%; left:4%; font-size:5rem;">FAKE</span>
-    <span class="scatter-word" style="top:18%; left:72%; font-size:3.5rem;">REAL</span>
-    <span class="scatter-word" style="top:38%; left:12%; font-size:2.5rem;">MISINFORMATION</span>
-    <span class="scatter-word" style="top:52%; left:65%; font-size:4rem;">VERIFIED</span>
-    <span class="scatter-word" style="top:70%; left:5%; font-size:3rem;">PROPAGANDA</span>
-    <span class="scatter-word" style="top:80%; left:55%; font-size:2rem;">DEEPFAKE</span>
-    <span class="scatter-word" style="top:28%; left:40%; font-size:2rem;">BIAS</span>
-    <span class="scatter-word" style="top:62%; left:30%; font-size:6rem; opacity:0.018;">LIE</span>
-    <div class="scatter-circle" style="top:15%; left:50%; width:300px; height:300px;"></div>
-    <div class="scatter-circle" style="top:55%; left:10%; width:180px; height:180px; background: radial-gradient(circle, rgba(59,130,246,0.06) 0%, transparent 70%);"></div>
-    <div class="scatter-circle" style="top:72%; left:70%; width:240px; height:240px; background: radial-gradient(circle, rgba(16,185,129,0.05) 0%, transparent 70%);"></div>
-    <div class="scatter-line" style="top:33%; left:0; width:40%; transform: rotate(-12deg);"></div>
-    <div class="scatter-line" style="top:75%; left:55%; width:30%; transform: rotate(6deg);"></div>
-  </div>
 
   <div class="stream-area" bind:this={scrollContainer}>
     <div class="reading-width">
       
       {#if tokens.length === 0 && !isAnalyzing && !verdict}
         <div class="empty-state animate-fade-in">
-          <h1 class="super-title">
-             <span class="outline-text">THREAT</span><br/>
-             <span class="font-highlight">ANALYSIS</span>
-          </h1>
-          <p class="subtitle">Paste an article or snippet into the box below and the dual-phase Roberta model will construct a live context map.</p>
+          <div class="eyebrow"><span class="eyebrow-line"></span> ARTICLE CHECK</div>
+          <h1 class="super-title">Check the story.<br /><span>Read the signals.</span></h1>
+          <p class="subtitle">Paste an article to review its probabilities, highlighted language, and optional agent notes.</p>
         </div>
       {/if}
 
@@ -226,16 +206,17 @@
       {/if}
       
       <!-- Spacing block for input -->
-      <div style="height: 180px;"></div>
+      <div style="height: 360px;"></div>
     </div>
   </div>
 
   <div class="input-area">
     <div class="input-card card">
+      <div class="input-heading"><strong>Article text</strong><span>Ctrl + Enter to analyze</span></div>
       <textarea 
         bind:value={textInput} 
         on:keydown={handleKeydown}
-        placeholder="Paste a news article or headline to analyze... (Ctrl+Enter to submit)"
+        placeholder="Paste an article or headline…"
         disabled={isAnalyzing}
       ></textarea>
 
@@ -327,16 +308,6 @@
     opacity: 1;
     z-index: 0;
     pointer-events: none;
-  }
-
-  .grain-overlay {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    pointer-events: none;
-    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noiseFilter)'/%3E%3C/svg%3E");
-    opacity: 0.05;
-    mix-blend-mode: overlay;
   }
 
   .stream-area {
@@ -791,48 +762,6 @@
     white-space: pre-wrap;
   }
 
-  /* Scattered background decorations */
-  .bg-scatter {
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: 0;
-    overflow: hidden;
-  }
-
-  .scatter-word {
-    position: absolute;
-    font-family: 'CookConthic', sans-serif;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 4px;
-    color: var(--text-main);
-    opacity: 0.028;
-    user-select: none;
-    white-space: nowrap;
-    transform: rotate(-8deg);
-  }
-
-  .scatter-word:nth-child(even) {
-    transform: rotate(5deg);
-    opacity: 0.022;
-  }
-
-  .scatter-circle {
-    position: absolute;
-    border-radius: 50%;
-    background: radial-gradient(circle, rgba(239,68,68,0.07) 0%, transparent 70%);
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-  }
-
-  .scatter-line {
-    position: absolute;
-    height: 1px;
-    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.04), transparent);
-    pointer-events: none;
-  }
-
   /* Responsive fixes for Chat */
   @media (max-width: 768px) {
     .empty-state .super-title {
@@ -898,5 +827,52 @@
       width: 100%;
       text-align: left;
     }
+  }
+  /* Article review layout */
+  .chat-container { font-family:Inter,"Segoe UI",Arial,sans-serif; }
+  .chat-bg { background:radial-gradient(ellipse at 75% 0%,rgba(59,130,246,.07),transparent 36%),#090b10; }
+  .stream-area { padding: 5rem 1.5rem 0; }
+  .reading-width { max-width: 1060px; }
+  .empty-state { margin-top: 4vh; margin-bottom: 2rem; padding-bottom: 1.5rem; }
+  .eyebrow { display:flex; align-items:center; gap:.65rem; color:#8c9ab1; font-family:inherit; font-size:.66rem; font-weight:650; letter-spacing:.13em; }
+  .eyebrow-line { width:24px; height:1px; background:#7aa9ff; }
+  .empty-state .super-title { font-family:inherit; font-size:clamp(2.4rem,4.8vw,4rem); line-height:1.06; margin:1.15rem 0 .8rem; letter-spacing:-.055em; font-weight:650; }
+  .empty-state .super-title span { color:#84aefb; }
+  .empty-state .subtitle { font-family:inherit; font-size:.94rem; max-width:580px; line-height:1.65; }
+  .input-area { padding:0 1.5rem 1.25rem; background:linear-gradient(to top,#090b10 78%,rgba(9,11,16,.82) 91%,transparent); }
+  .input-card { max-width:1060px; padding:1.1rem 1.2rem .9rem; border-radius:16px; box-shadow:0 18px 65px rgba(0,0,0,.35); border:1px solid rgba(160,180,220,.2); background:rgba(13,16,23,.97); }
+  .input-heading { display:flex; justify-content:space-between; align-items:center; padding:0 .35rem .65rem; color:#8792a5; font-size:.72rem; }
+  .input-heading strong { font-size:.88rem; font-weight:600; color:#e9edf5; }
+  textarea { min-height:220px; max-height:min(38vh,420px); padding:1rem; border:1px solid rgba(160,180,220,.12); border-radius:10px; background:rgba(255,255,255,.018); font-family:inherit; font-size:.94rem; line-height:1.65; overflow-y:auto; }
+  textarea:focus { border-color:rgba(122,169,255,.48); box-shadow:0 0 0 3px rgba(122,169,255,.08); }
+  .word-count-ok { padding:.35rem .25rem .1rem 0; }
+  @media(max-width:768px) {
+    .stream-area { padding:5rem 1rem 0; }
+    .empty-state .super-title { font-size:10vw; }
+    .input-area { padding:0 .75rem .75rem; }
+    textarea { min-height:190px; max-height:34vh; }
+    .input-heading { padding-left:.1rem; padding-right:.1rem; }
+  }
+
+  @media(max-height:920px) {
+    .stream-area { padding-top:4.25rem; }
+    .empty-state { margin-top:0; margin-bottom:.75rem; }
+    .empty-state .super-title { font-size:clamp(2.2rem,4.3vw,3.4rem); margin:.8rem 0 .55rem; }
+    textarea { min-height:180px; max-height:30vh; }
+  }
+
+  @media(max-width:900px) {
+    .input-footer { flex-wrap:wrap; gap:.75rem; }
+    .footer-left { width:auto; flex-direction:row; flex-wrap:wrap; align-items:center; gap:.7rem; }
+    .submit-btn { width:auto; }
+  }
+
+  @media(max-width:520px) {
+    .empty-state .super-title { font-size:2.35rem; }
+    .input-heading { font-size:.64rem; }
+    .input-footer { align-items:stretch; }
+    .footer-left { width:100%; flex-direction:column; align-items:flex-start; }
+    .model-toggle-inline,.agent-toggle-inline { width:100%; }
+    .submit-btn { width:100%; }
   }
 </style>
